@@ -14,14 +14,14 @@ Given a document like this:
 ```markdown
 ![[meeting-recording.ogg]]
 
-Alice 00:27
+Alice {t:00:27}
 So the main idea is to build a platform that connects...
 
-Bob 01:02
+Bob {t:01:02}
 Right, and we should probably start with the MVP first.
 ```
 
-In reading view, each timestamp becomes a clickable `▶ 00:27` button. Click to play from that position; click again to pause.
+In reading view, each explicit timestamp token becomes a clickable `▶ 00:27` button. Click to play from that position; click again to pause.
 
 ![Preview](https://raw.githubusercontent.com/zhoulianglen/obsidian-timestamp-player/master/assets/preview-en.png)
 
@@ -29,7 +29,7 @@ In reading view, each timestamp becomes a clickable `▶ 00:27` button. Click to
 
 - **Explicit timestamp tokens** — `{t:00:27}` and `{t:01:02:03}` become clickable play buttons
 - **Beat/bar tokens** — `{b:4.3}` can seek by musical position when a section declares BPM
-- **Per-section rhythm config** — `{music bpm=135 delay=0.3 meter=4/4}` configures beat conversion for the audio below it
+- **Per-section rhythm config** — `{music bpm=135 delay=0.3 meter=4/4}` configures beat conversion for following tokens in the current audio section
 - **Optional metronome** — enable quiet click and beat pulse feedback globally or per section
 - **Legacy compatibility** — bare `MM:SS` timestamps can be re-enabled in settings for old transcript notes
 - **Play / pause toggle** — click `▶` to play, click `⏸` to pause, click again to resume
@@ -86,27 +86,27 @@ When a document contains more than one audio file, the plugin automatically part
 ```markdown
 ![[interview-part1.mp3]]
 
-Alice 00:27
+Alice {t:00:27}
 First part of the conversation...
 
-Bob 01:02
+Bob {t:01:02}
 Still part one...
 
 ![[interview-part2.mp3]]
 
-Alice 00:15
+Alice {t:00:15}
 This is the second recording...
 
-Bob 00:45
+Bob {t:00:45}
 Also in part two...
 ```
 
 | Timestamp | Audio file |
 |-----------|------------|
-| `00:27`, `01:02` | interview-part1.mp3 |
-| `00:15`, `00:45` | interview-part2.mp3 |
+| `{t:00:27}`, `{t:01:02}` | interview-part1.mp3 |
+| `{t:00:15}`, `{t:00:45}` | interview-part2.mp3 |
 
-Sections are fully independent — timestamps can overlap across sections (e.g., both can have `00:00`) without conflict. When switching between sections, the previous audio is automatically paused.
+Sections are fully independent — timestamps can overlap across sections (e.g., both can have `{t:00:00}`) without conflict. When switching between sections, the previous audio is automatically paused.
 
 ## Installation
 
@@ -123,10 +123,11 @@ Search for **Timestamp Player** in Settings → Community plugins, or install di
 
 ## Manual Testing In Obsidian
 
-1. Run `npm run build`.
+1. From the plugin project directory, run `npm install`, then `npm run build`.
 2. Copy `main.js`, `styles.css`, and `manifest.json` into `<vault>/.obsidian/plugins/timestamp-player/`.
-3. Enable **Timestamp Player** in Settings → Community plugins.
-4. Open a note in reading view with:
+3. Put an actual audio file named `music.ogg` in the vault, or change the embed name below to match your file.
+4. Enable **Timestamp Player** in Settings → Community plugins.
+5. Open a note in reading view with:
 
 ```markdown
 ![[music.ogg]]
@@ -144,6 +145,16 @@ Expected behavior:
 - `00:07` stays plain text until **Recognize bare timestamps** is enabled.
 - `{b:2.1}` seeks to 1.7 seconds.
 - Setting `metronome=on` produces beat pulse feedback and quiet clicks during playback.
+
+For a quick multi-audio check, add a second real audio file and note section:
+
+```markdown
+![[second.ogg]]
+
+Second file {t:00:03}
+```
+
+`{t:00:03}` should control only `second.ogg`; the earlier buttons should still control `music.ogg`.
 
 ## Requirements
 
