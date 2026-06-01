@@ -13,6 +13,7 @@ import {
 	parseLegacySpeakerLine,
 } from "./parsing";
 import { DEFAULT_SETTINGS, TimestampPlayerSettings, TimestampPlayerSettingTab } from "./settings";
+import { TimestampMetronome, MetronomeRuntimeConfig } from "./metronome";
 
 const AUDIO_EMBED_RE = /!\[\[.+?\.(mp3|webm|wav|m4a|ogg|3gp|flac)\]\]/i;
 const EXPLICIT_TOKEN_PREFIX_RE = /\{(?:t:|b:|music\b)/;
@@ -276,6 +277,8 @@ export default class TimestampPlayerPlugin extends Plugin {
 	private boundTimeUpdate: (() => void) | null = null;
 	private boundEnded: (() => void) | null = null;
 	private boundPause: (() => void) | null = null;
+	private boundPlay: (() => void) | null = null;
+	private metronome = new TimestampMetronome();
 	private switching = false;
 	private queuedRoots = new WeakSet<HTMLElement>();
 
@@ -348,17 +351,20 @@ export default class TimestampPlayerPlugin extends Plugin {
 			if (this.activeBtn) {
 				const icon = this.activeBtn.querySelector(".tsp-play-icon");
 				if (icon) icon.textContent = "▶";
+				this.metronome.stop();
+			}
+		};
+		this.boundPlay = () => {
+			if (this.activeBtn) {
+				const icon = this.activeBtn.querySelector(".tsp-play-icon");
+				if (icon) icon.textContent = "⏸";
+				this.startMetronomeForActiveButton();
 			}
 		};
 		audio.addEventListener("timeupdate", this.boundTimeUpdate);
 		audio.addEventListener("ended", this.boundEnded);
 		audio.addEventListener("pause", this.boundPause);
-		audio.addEventListener("play", () => {
-			if (this.activeBtn) {
-				const icon = this.activeBtn.querySelector(".tsp-play-icon");
-				if (icon) icon.textContent = "⏸";
-			}
-		});
+		audio.addEventListener("play", this.boundPlay);
 	}
 
 	/** Find the audio element that this button belongs to (the last audio before it in document order) */
@@ -414,6 +420,56 @@ export default class TimestampPlayerPlugin extends Plugin {
 		}
 	}
 
+	private startMetronomeForActiveButton() {
+		if (!this.activeAudio || !this.activeBtn || this.activeAudio.paused) return;
+
+		const config = this.getMetronomeConfig(this.activeBtn);
+		if (!config) {
+			this.metronome.stop();
+			return;
+		}
+
+		this.metronome.start(this.activeAudio, config, (_beatIndex, downbeat) => {
+			this.pulseBeat(downbeat);
+		});
+	}
+
+	private getMetronomeConfig(btn: HTMLElement): MetronomeRuntimeConfig | null {
+		if (btn.getAttribute("data-metronome-enabled") !== "true") return null;
+
+		const bpm = Number(btn.getAttribute("data-bpm"));
+		const delay = Number(btn.getAttribute("data-delay"));
+		const beatsPerBar = Number(btn.getAttribute("data-beats-per-bar"));
+		const volume = Number(btn.getAttribute("data-metronome-volume"));
+
+		if (!Number.isFinite(bpm) || bpm <= 0) return null;
+		if (!Number.isFinite(delay)) return null;
+		if (!Number.isSafeInteger(beatsPerBar) || beatsPerBar <= 0) return null;
+		if (!Number.isFinite(volume)) return null;
+
+		return {
+			bpm,
+			delay,
+			beatsPerBar,
+			volume: Math.max(0, Math.min(1, volume)),
+		};
+	}
+
+	private pulseBeat(downbeat: boolean) {
+		if (!this.activeBtn) return;
+		this.activeBtn.removeClass("tsp-beat-pulse");
+		this.activeBtn.removeClass("tsp-downbeat-pulse");
+
+		window.requestAnimationFrame(() => {
+			if (!this.activeBtn) return;
+			this.activeBtn.addClass(downbeat ? "tsp-downbeat-pulse" : "tsp-beat-pulse");
+			window.setTimeout(() => {
+				this.activeBtn?.removeClass("tsp-beat-pulse");
+				this.activeBtn?.removeClass("tsp-downbeat-pulse");
+			}, 120);
+		});
+	}
+
 	private setActiveBtn(btn: HTMLElement) {
 		if (this.activeBtn) {
 			const prevIcon = this.activeBtn.querySelector(".tsp-play-icon");
@@ -424,6 +480,7 @@ export default class TimestampPlayerPlugin extends Plugin {
 		const icon = btn.querySelector(".tsp-play-icon");
 		if (icon) icon.textContent = "⏸";
 		this.activeBtn = btn;
+		this.startMetronomeForActiveButton();
 	}
 
 	private resetActiveBtn() {
@@ -440,10 +497,13 @@ export default class TimestampPlayerPlugin extends Plugin {
 			if (this.boundTimeUpdate) this.activeAudio.removeEventListener("timeupdate", this.boundTimeUpdate);
 			if (this.boundEnded) this.activeAudio.removeEventListener("ended", this.boundEnded);
 			if (this.boundPause) this.activeAudio.removeEventListener("pause", this.boundPause);
+			if (this.boundPlay) this.activeAudio.removeEventListener("play", this.boundPlay);
+			this.metronome.stop();
 		}
 		this.boundTimeUpdate = null;
 		this.boundEnded = null;
 		this.boundPause = null;
+		this.boundPlay = null;
 	}
 
 	private clearPlaybackState() {

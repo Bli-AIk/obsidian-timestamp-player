@@ -42,3 +42,11 @@
 .tsp-time {
 	font-family: var(--font-monospace);
 }
+
+.tsp-timestamp.tsp-beat-pulse {
+	box-shadow: 0 0 0 2px var(--background-modifier-border);
+}
+
+.tsp-timestamp.tsp-downbeat-pulse {
+	box-shadow: 0 0 0 2px var(--text-accent);
+}
