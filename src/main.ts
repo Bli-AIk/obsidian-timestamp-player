@@ -15,6 +15,7 @@ import {
 import { DEFAULT_SETTINGS, TimestampPlayerSettings, TimestampPlayerSettingTab } from "./settings";
 
 const AUDIO_EMBED_RE = /!\[\[.+?\.(mp3|webm|wav|m4a|ogg|3gp|flac)\]\]/i;
+const EXPLICIT_TOKEN_PREFIX_RE = /\{(?:t:|b:|music\b)/;
 const TOKEN_SCAN_RE = /\{(?:t:|b:|music\b)|\b\d{1,3}:\d{2}\b/;
 
 interface TimelineTextNode {
@@ -188,6 +189,10 @@ export default class TimestampPlayerPlugin extends Plugin {
 			fragment.appendChild(activeDocument.createTextNode(text));
 			return;
 		}
+		if (EXPLICIT_TOKEN_PREFIX_RE.test(text)) {
+			fragment.appendChild(activeDocument.createTextNode(text));
+			return;
+		}
 
 		const legacyTokens = findLegacyInlineTimestamps(text);
 		if (legacyTokens.length === 0) {
@@ -211,6 +216,8 @@ export default class TimestampPlayerPlugin extends Plugin {
 
 	private replaceLegacyTextNode(node: Text, sectionConfig: RhythmConfig): RhythmConfig | null {
 		const text = node.textContent ?? "";
+		if (EXPLICIT_TOKEN_PREFIX_RE.test(text)) return null;
+
 		const speaker = parseLegacySpeakerLine(text);
 		if (speaker) {
 			const wrapper = createFragment();
