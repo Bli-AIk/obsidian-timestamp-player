@@ -1,17 +1,27 @@
 import { Plugin, MarkdownPostProcessorContext, MarkdownView, TFile } from "obsidian";
+import { DEFAULT_SETTINGS, TimestampPlayerSettings, TimestampPlayerSettingTab } from "./settings";
 
 const SPEAKER_LINE_RE = /^(.+?)\s+(\d{1,3}):(\d{2})\s*$/;
 const INLINE_TS_RE = /(\d{1,3}:\d{2})/g;
 const AUDIO_EMBED_RE = /!\[\[.+?\.(mp3|webm|wav|m4a|ogg|3gp|flac)\]\]/i;
 
 export default class TimestampPlayerPlugin extends Plugin {
-	onload() {
+	settings: TimestampPlayerSettings = { ...DEFAULT_SETTINGS };
+
+	async onload() {
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.addSettingTab(new TimestampPlayerSettingTab(this.app, this));
+
 		this.registerMarkdownPostProcessor(
 			async (el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
 				if (!(await this.hasAudioEmbed(ctx))) return;
 				this.processTimestamps(el);
 			}
 		);
+	}
+
+	async saveSettings(): Promise<void> {
+		await this.saveData(this.settings);
 	}
 
 	private async hasAudioEmbed(ctx: MarkdownPostProcessorContext): Promise<boolean> {
