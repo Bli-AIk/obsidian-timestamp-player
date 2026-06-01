@@ -9,14 +9,16 @@ An Obsidian plugin that embeds audio players in your notes with timestamp links 
 
 ## Fork Changes
 
-This fork keeps the upstream README below mostly intact for reference. Sections after this one describe the original upstream/legacy behavior, where bare `MM:SS` and speaker-line timestamps were recognized by default. In this fork, explicit tokens are preferred and legacy bare timestamps are disabled by default.
+This fork keeps the upstream README below mostly intact for reference. Sections after this one describe the original upstream/legacy behavior, where bare `MM:SS` and speaker-line timestamps were recognized by default. In this fork, explicit tokens are preferred/default, and legacy bare timestamps are disabled by default.
+
+This fork was written entirely by AI. The author has personally verified it, uses it in their own workflow, and treats it as a temporary practical utility rather than a polished, general-purpose, maintained product.
 
 - **Explicit timestamp tokens:** use `{t:00:27}` or `{t:01:02:03}` for clickable absolute timestamps.
 - **Beat/bar tokens:** use `{b:bar.beat}`, such as `{b:4.3}`, for musical-position seeking.
 - **Rhythm config:** place `{music bpm=135 delay=0.3 meter=4/4 metronome=off}` after an audio embed. It applies to following tokens in the current audio section.
 - **Head-delay semantics:** `delay` is subtracted from beat time, so the resolved beat audio time is `beat time - delay`.
 - **Legacy compatibility:** bare `MM:SS` and speaker-line timestamps are available only when **Recognize bare timestamps** is enabled in settings.
-- **Optional metronome:** enable globally by default or per section with `metronome=on` for quiet clicks and visual beat pulses during playback.
+- **Optional metronome and beat display:** sections with `bpm` show the current beat beside the audio player. Enable the metronome globally by default or per section with `metronome=on` for quiet clicks and visual beat pulses during playback.
 
 Manual local verification:
 
