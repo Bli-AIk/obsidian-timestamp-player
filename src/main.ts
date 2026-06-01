@@ -53,6 +53,7 @@ export default class TimestampPlayerPlugin extends Plugin {
 
 	onunload() {
 		this.clearPlaybackState();
+		this.metronome.dispose();
 	}
 
 	async saveSettings(): Promise<void> {
@@ -466,6 +467,7 @@ export default class TimestampPlayerPlugin extends Plugin {
 		target.removeClass("tsp-downbeat-pulse");
 
 		window.requestAnimationFrame(() => {
+			if (!target.isConnected) return;
 			target.addClass(downbeat ? "tsp-downbeat-pulse" : "tsp-beat-pulse");
 			window.setTimeout(() => {
 				target.removeClass("tsp-beat-pulse");

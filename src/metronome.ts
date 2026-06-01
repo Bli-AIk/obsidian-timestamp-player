@@ -42,6 +42,13 @@ export class TimestampMetronome {
 		this.onBeat = null;
 	}
 
+	dispose(): void {
+		this.stop();
+		const context = this.context;
+		this.context = null;
+		if (context && context.state !== "closed") context.close().catch(() => {});
+	}
+
 	private tick(): void {
 		if (!this.audio || !this.config || this.audio.paused || this.audio.ended) return;
 
@@ -59,8 +66,10 @@ export class TimestampMetronome {
 	}
 
 	private playClick(downbeat: boolean): void {
+		if (!this.config || this.config.volume <= 0) return;
+
 		const context = this.getAudioContext();
-		if (!context || !this.config || this.config.volume <= 0) return;
+		if (!context) return;
 		if (context.state === "suspended") context.resume().catch(() => {});
 
 		const now = context.currentTime;
