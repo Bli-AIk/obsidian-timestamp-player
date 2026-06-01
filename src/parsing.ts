@@ -47,7 +47,7 @@ export interface LegacySpeakerLine {
 	seconds: number;
 }
 
-const EXPLICIT_TOKEN_RE = /\{(?:t:[^{}\s]+|b:[^{}\s]+|music(?:\s+[^{}]*)?)\}/g;
+const EXPLICIT_TOKEN_RE = /\{(?:t:|b:|music(?=\s|\}))[^{}]*\}/g;
 const LEGACY_INLINE_RE = /\b(\d{1,3}:\d{2})\b/g;
 const LEGACY_SPEAKER_RE = /^(.+?)\s+(\d{1,3}:\d{2})\s*$/;
 
@@ -109,7 +109,10 @@ function parseMusicToken(raw: string, start: number, end: number): ExplicitToken
 	const patch: RhythmConfigPatch = {};
 
 	for (const part of parts.slice(1)) {
-		const [key, value] = part.split("=");
+		const assignment = part.split("=");
+		if (assignment.length > 2) return { type: "invalid", raw, start, end };
+
+		const [key, value] = assignment;
 		if (!key || value === undefined) continue;
 
 		if (key === "bpm") {

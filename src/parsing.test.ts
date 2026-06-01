@@ -57,6 +57,39 @@ describe("findExplicitTokens", () => {
 			{ type: "invalid", raw: "{music bpm=nope}", start: 10, end: 26 },
 		]);
 	});
+
+	it("keeps malformed explicit time tokens with whitespace as invalid tokens", () => {
+		expect(findExplicitTokens("{t:00:27 bad}")).toEqual([
+			{ type: "invalid", raw: "{t:00:27 bad}", start: 0, end: 13 },
+		]);
+	});
+
+	it("keeps malformed explicit beat tokens with whitespace as invalid tokens", () => {
+		expect(findExplicitTokens("{b:1.1 bad}")).toEqual([
+			{ type: "invalid", raw: "{b:1.1 bad}", start: 0, end: 11 },
+		]);
+	});
+
+	it("rejects music config tokens with malformed assignments", () => {
+		expect(findExplicitTokens("{music bpm=120=bad}")).toEqual([
+			{ type: "invalid", raw: "{music bpm=120=bad}", start: 0, end: 19 },
+		]);
+	});
+
+	it("keeps valid music config values when invalid values are syntactically well formed", () => {
+		expect(findExplicitTokens("{music bpm=120 delay=nope meter=3/4}")).toEqual([
+			{
+				type: "music",
+				raw: "{music bpm=120 delay=nope meter=3/4}",
+				start: 0,
+				end: 36,
+				patch: {
+					bpm: 120,
+					meter: { beatsPerBar: 3, beatUnit: 4, label: "3/4" },
+				},
+			},
+		]);
+	});
 });
 
 describe("legacy parsing helpers", () => {
