@@ -88,3 +88,24 @@ export function resolveBeatSeconds(position: BeatPosition, config: Pick<RhythmCo
 	const beatSeconds = beatIndex * secondsPerBeat;
 	return Math.max(0, beatSeconds - config.delay);
 }
+
+export function resolveCurrentBeatPosition(seconds: number, config: Pick<RhythmConfig, "bpm" | "delay" | "meter">): BeatPosition | null {
+	if (!Number.isFinite(seconds) || seconds < 0) return null;
+	if (config.bpm === null || !Number.isFinite(config.bpm) || config.bpm <= 0) return null;
+	if (!Number.isFinite(config.delay)) return null;
+	if (!Number.isSafeInteger(config.meter.beatsPerBar) || config.meter.beatsPerBar <= 0) return null;
+
+	const secondsPerBeat = 60 / config.bpm;
+	const beatPositionSeconds = seconds + config.delay;
+	const beatIndex = Math.max(0, Math.floor(beatPositionSeconds / secondsPerBeat));
+	if (!Number.isSafeInteger(beatIndex)) return null;
+
+	return {
+		bar: Math.floor(beatIndex / config.meter.beatsPerBar) + 1,
+		beat: (beatIndex % config.meter.beatsPerBar) + 1,
+	};
+}
+
+export function formatBeatPosition(position: BeatPosition): string {
+	return `${position.bar}.${position.beat}`;
+}

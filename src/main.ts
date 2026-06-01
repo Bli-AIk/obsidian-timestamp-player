@@ -3,7 +3,9 @@ import {
 	DEFAULT_RHYTHM_CONFIG,
 	RhythmConfig,
 	cloneRhythmConfig,
+	formatBeatPosition,
 	mergeRhythmConfig,
+	resolveCurrentBeatPosition,
 	resolveBeatSeconds,
 } from "./rhythm";
 import {
@@ -36,6 +38,12 @@ interface TimelineConfigNode {
 
 type TimelineNode = TimelineTextNode | TimelineAudioNode | TimelineConfigNode;
 
+interface AudioBeatDisplayBinding {
+	audio: HTMLAudioElement;
+	display: HTMLElement;
+	update: () => void;
+}
+
 export default class TimestampPlayerPlugin extends Plugin {
 	settings: TimestampPlayerSettings = { ...DEFAULT_SETTINGS };
 
@@ -53,6 +61,7 @@ export default class TimestampPlayerPlugin extends Plugin {
 
 	onunload() {
 		this.clearPlaybackState();
+		this.clearBeatDisplays();
 		this.metronome.dispose();
 	}
 
@@ -85,20 +94,28 @@ export default class TimestampPlayerPlugin extends Plugin {
 
 	private processTimestamps(el: HTMLElement) {
 		let sectionConfig: RhythmConfig = cloneRhythmConfig(DEFAULT_RHYTHM_CONFIG);
+		let sectionAudio: HTMLAudioElement | null = null;
 
 		for (const item of this.collectTimelineNodes(el)) {
 			if (item.type === "audio") {
 				sectionConfig = cloneRhythmConfig(DEFAULT_RHYTHM_CONFIG);
+				sectionAudio = item.node;
+				this.removeBeatDisplay(item.node);
 				continue;
 			}
 
 			if (item.type === "config") {
 				sectionConfig = item.config;
+				if (sectionAudio) this.attachBeatDisplay(sectionAudio, sectionConfig);
 				continue;
 			}
 
+			const previousConfig = sectionConfig;
 			const nextConfig = this.processTextNode(item.node, sectionConfig);
-			if (nextConfig) sectionConfig = nextConfig;
+			if (nextConfig) {
+				sectionConfig = nextConfig;
+				if (sectionAudio && nextConfig !== previousConfig) this.attachBeatDisplay(sectionAudio, sectionConfig);
+			}
 		}
 	}
 
@@ -107,7 +124,7 @@ export default class TimestampPlayerPlugin extends Plugin {
 		const walker = activeDocument.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
 			acceptNode: (node) => {
 				if (node instanceof HTMLElement) {
-					if (node.matches("code, pre, .tsp-timestamp")) return NodeFilter.FILTER_REJECT;
+					if (node.matches("code, pre, .tsp-timestamp, .tsp-beat-display")) return NodeFilter.FILTER_REJECT;
 					if (node.tagName === "AUDIO") return NodeFilter.FILTER_ACCEPT;
 					if (node.hasClass("tsp-rhythm-config")) return NodeFilter.FILTER_ACCEPT;
 					if (node.hasClass("tsp-processed")) return NodeFilter.FILTER_SKIP;
@@ -286,6 +303,8 @@ export default class TimestampPlayerPlugin extends Plugin {
 	private metronome = new TimestampMetronome();
 	private switching = false;
 	private queuedRoots = new WeakSet<HTMLElement>();
+	private beatDisplays = new WeakMap<HTMLAudioElement, AudioBeatDisplayBinding>();
+	private beatDisplayBindings = new Set<AudioBeatDisplayBinding>();
 
 	private createTimestampBtn(label: string, totalSeconds: number, rhythmConfig: RhythmConfig): HTMLSpanElement {
 		const btn = createSpan({ cls: "tsp-timestamp" });
@@ -458,6 +477,51 @@ export default class TimestampPlayerPlugin extends Plugin {
 			beatsPerBar,
 			volume: Math.max(0, Math.min(1, volume)),
 		};
+	}
+
+	private attachBeatDisplay(audio: HTMLAudioElement, config: RhythmConfig) {
+		if (config.bpm === null || !Number.isFinite(config.bpm) || config.bpm <= 0) {
+			this.removeBeatDisplay(audio);
+			return;
+		}
+
+		this.removeBeatDisplay(audio);
+
+		const display = createSpan({ cls: "tsp-beat-display" });
+		display.setAttribute("aria-label", "Current beat");
+		audio.insertAdjacentElement("afterend", display);
+
+		const update = () => {
+			const position = resolveCurrentBeatPosition(audio.currentTime, config);
+			display.textContent = position ? formatBeatPosition(position) : "";
+		};
+
+		audio.addEventListener("timeupdate", update);
+		audio.addEventListener("seeked", update);
+		audio.addEventListener("loadedmetadata", update);
+		update();
+
+		const binding = { audio, display, update };
+		this.beatDisplays.set(audio, binding);
+		this.beatDisplayBindings.add(binding);
+	}
+
+	private removeBeatDisplay(audio: HTMLAudioElement) {
+		const binding = this.beatDisplays.get(audio);
+		if (!binding) return;
+
+		binding.audio.removeEventListener("timeupdate", binding.update);
+		binding.audio.removeEventListener("seeked", binding.update);
+		binding.audio.removeEventListener("loadedmetadata", binding.update);
+		binding.display.remove();
+		this.beatDisplays.delete(audio);
+		this.beatDisplayBindings.delete(binding);
+	}
+
+	private clearBeatDisplays() {
+		for (const binding of Array.from(this.beatDisplayBindings)) {
+			this.removeBeatDisplay(binding.audio);
+		}
 	}
 
 	private pulseBeat(downbeat: boolean) {

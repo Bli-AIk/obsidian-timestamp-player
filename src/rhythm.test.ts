@@ -4,8 +4,10 @@ import {
 	DEFAULT_METER,
 	DEFAULT_RHYTHM_CONFIG,
 	mergeRhythmConfig,
+	formatBeatPosition,
 	parseBeatPosition,
 	parseMeter,
+	resolveCurrentBeatPosition,
 	resolveBeatSeconds,
 } from "./rhythm";
 
@@ -109,5 +111,30 @@ describe("resolveBeatSeconds", () => {
 		expect(resolveBeatSeconds({ bar: 1, beat: 1 }, { ...DEFAULT_RHYTHM_CONFIG, bpm: 120, meter: { beatsPerBar: -1, beatUnit: 4, label: "-1/4" } })).toBeNull();
 		expect(resolveBeatSeconds({ bar: 1, beat: 1 }, { ...DEFAULT_RHYTHM_CONFIG, bpm: 120, meter: { beatsPerBar: 1.5, beatUnit: 4, label: "1.5/4" } })).toBeNull();
 		expect(resolveBeatSeconds({ bar: 1, beat: 1 }, { ...DEFAULT_RHYTHM_CONFIG, bpm: 120, meter: { beatsPerBar: Number.MAX_SAFE_INTEGER + 1, beatUnit: 4, label: "unsafe/4" } })).toBeNull();
+	});
+});
+
+describe("resolveCurrentBeatPosition", () => {
+	it("maps audio time back to the current beat", () => {
+		expect(resolveCurrentBeatPosition(0, { ...DEFAULT_RHYTHM_CONFIG, bpm: 120, delay: 0.3 })).toEqual({ bar: 1, beat: 1 });
+		expect(resolveCurrentBeatPosition(1.7, { ...DEFAULT_RHYTHM_CONFIG, bpm: 120, delay: 0.3 })).toEqual({ bar: 2, beat: 1 });
+	});
+
+	it("uses the configured meter numerator", () => {
+		const meter = parseMeter("3/4");
+		expect(meter).not.toBeNull();
+		expect(resolveCurrentBeatPosition(3, { ...DEFAULT_RHYTHM_CONFIG, bpm: 60, meter: meter! })).toEqual({ bar: 2, beat: 1 });
+	});
+
+	it("rejects invalid display inputs", () => {
+		expect(resolveCurrentBeatPosition(-1, { ...DEFAULT_RHYTHM_CONFIG, bpm: 120 })).toBeNull();
+		expect(resolveCurrentBeatPosition(0, { ...DEFAULT_RHYTHM_CONFIG, bpm: null })).toBeNull();
+		expect(resolveCurrentBeatPosition(0, { ...DEFAULT_RHYTHM_CONFIG, bpm: 120, meter: { beatsPerBar: 0, beatUnit: 4, label: "0/4" } })).toBeNull();
+	});
+});
+
+describe("formatBeatPosition", () => {
+	it("formats bar and beat labels", () => {
+		expect(formatBeatPosition({ bar: 12, beat: 3 })).toBe("12.3");
 	});
 });
