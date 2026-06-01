@@ -27,7 +27,12 @@ interface TimelineAudioNode {
 	node: HTMLAudioElement;
 }
 
-type TimelineNode = TimelineTextNode | TimelineAudioNode;
+interface TimelineConfigNode {
+	type: "config";
+	config: RhythmConfig;
+}
+
+type TimelineNode = TimelineTextNode | TimelineAudioNode | TimelineConfigNode;
 
 export default class TimestampPlayerPlugin extends Plugin {
 	settings: TimestampPlayerSettings = { ...DEFAULT_SETTINGS };
@@ -80,6 +85,11 @@ export default class TimestampPlayerPlugin extends Plugin {
 				continue;
 			}
 
+			if (item.type === "config") {
+				sectionConfig = item.config;
+				continue;
+			}
+
 			const nextConfig = this.processTextNode(item.node, sectionConfig);
 			if (nextConfig) sectionConfig = nextConfig;
 		}
@@ -90,10 +100,15 @@ export default class TimestampPlayerPlugin extends Plugin {
 		const walker = activeDocument.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
 			acceptNode: (node) => {
 				if (node instanceof HTMLElement) {
-					if (node.matches("code, pre, .tsp-processed, .tsp-timestamp")) return NodeFilter.FILTER_REJECT;
+					if (node.matches("code, pre, .tsp-timestamp")) return NodeFilter.FILTER_REJECT;
 					if (node.tagName === "AUDIO") return NodeFilter.FILTER_ACCEPT;
+					if (node.hasClass("tsp-rhythm-config")) return NodeFilter.FILTER_ACCEPT;
+					if (node.hasClass("tsp-processed")) return NodeFilter.FILTER_SKIP;
 					return NodeFilter.FILTER_SKIP;
 				}
+
+				const parent = node.parentElement;
+				if (parent?.closest("code, pre, .tsp-processed, .tsp-timestamp")) return NodeFilter.FILTER_REJECT;
 
 				const text = node.textContent ?? "";
 				if (!TOKEN_SCAN_RE.test(text)) return NodeFilter.FILTER_REJECT;
@@ -105,6 +120,8 @@ export default class TimestampPlayerPlugin extends Plugin {
 		while ((node = walker.nextNode()) !== null) {
 			if (node instanceof HTMLAudioElement) {
 				nodes.push({ type: "audio", node });
+			} else if (node instanceof HTMLElement && node.hasClass("tsp-rhythm-config")) {
+				nodes.push({ type: "config", config: this.readRhythmConfigMarker(node) });
 			} else if (node.nodeType === Node.TEXT_NODE) {
 				nodes.push({ type: "text", node: node as Text });
 			}
@@ -156,7 +173,9 @@ export default class TimestampPlayerPlugin extends Plugin {
 		}
 
 		if (token.type === "music") {
-			return mergeRhythmConfig(sectionConfig, token.patch);
+			const nextConfig = mergeRhythmConfig(sectionConfig, token.patch);
+			fragment.appendChild(this.createRhythmConfigMarker(nextConfig));
+			return nextConfig;
 		}
 
 		fragment.appendChild(activeDocument.createTextNode(token.raw));
@@ -208,6 +227,40 @@ export default class TimestampPlayerPlugin extends Plugin {
 		this.appendTextWithLegacy(wrapper, text, sectionConfig);
 		node.parentNode?.replaceChild(wrapper, node);
 		return null;
+	}
+
+	private createRhythmConfigMarker(config: RhythmConfig): HTMLSpanElement {
+		const marker = createSpan({ cls: "tsp-rhythm-config" });
+		marker.setAttribute("aria-hidden", "true");
+		marker.setAttribute("data-delay", String(config.delay));
+		marker.setAttribute("data-beats-per-bar", String(config.meter.beatsPerBar));
+		marker.setAttribute("data-beat-unit", String(config.meter.beatUnit));
+		marker.setAttribute("data-meter-label", config.meter.label);
+		marker.setAttribute("data-metronome", config.metronome === null ? "" : String(config.metronome));
+		if (config.bpm !== null) marker.setAttribute("data-bpm", String(config.bpm));
+		marker.style.display = "none";
+		return marker;
+	}
+
+	private readRhythmConfigMarker(marker: HTMLElement): RhythmConfig {
+		const defaultConfig = cloneRhythmConfig(DEFAULT_RHYTHM_CONFIG);
+		const bpmValue = marker.getAttribute("data-bpm");
+		const delay = Number(marker.getAttribute("data-delay"));
+		const beatsPerBar = Number(marker.getAttribute("data-beats-per-bar"));
+		const beatUnit = Number(marker.getAttribute("data-beat-unit"));
+		const meterLabel = marker.getAttribute("data-meter-label");
+		const metronomeValue = marker.getAttribute("data-metronome");
+
+		return {
+			bpm: bpmValue === null ? null : Number(bpmValue),
+			delay: Number.isFinite(delay) ? delay : defaultConfig.delay,
+			meter: {
+				beatsPerBar: Number.isSafeInteger(beatsPerBar) && beatsPerBar > 0 ? beatsPerBar : defaultConfig.meter.beatsPerBar,
+				beatUnit: Number.isSafeInteger(beatUnit) && beatUnit > 0 ? beatUnit : defaultConfig.meter.beatUnit,
+				label: meterLabel ?? defaultConfig.meter.label,
+			},
+			metronome: metronomeValue === "true" ? true : metronomeValue === "false" ? false : null,
+		};
 	}
 
 	private activeBtn: HTMLElement | null = null;
