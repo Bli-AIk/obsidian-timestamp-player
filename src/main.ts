@@ -1,9 +1,33 @@
 import { Plugin, MarkdownPostProcessorContext, MarkdownView, TFile } from "obsidian";
+import {
+	DEFAULT_RHYTHM_CONFIG,
+	RhythmConfig,
+	cloneRhythmConfig,
+	mergeRhythmConfig,
+	resolveBeatSeconds,
+} from "./rhythm";
+import {
+	ExplicitToken,
+	findExplicitTokens,
+	findLegacyInlineTimestamps,
+	parseLegacySpeakerLine,
+} from "./parsing";
 import { DEFAULT_SETTINGS, TimestampPlayerSettings, TimestampPlayerSettingTab } from "./settings";
 
-const SPEAKER_LINE_RE = /^(.+?)\s+(\d{1,3}):(\d{2})\s*$/;
-const INLINE_TS_RE = /(\d{1,3}:\d{2})/g;
 const AUDIO_EMBED_RE = /!\[\[.+?\.(mp3|webm|wav|m4a|ogg|3gp|flac)\]\]/i;
+const TOKEN_SCAN_RE = /\{(?:t:|b:|music\b)|\b\d{1,3}:\d{2}\b/;
+
+interface TimelineTextNode {
+	type: "text";
+	node: Text;
+}
+
+interface TimelineAudioNode {
+	type: "audio";
+	node: HTMLAudioElement;
+}
+
+type TimelineNode = TimelineTextNode | TimelineAudioNode;
 
 export default class TimestampPlayerPlugin extends Plugin {
 	settings: TimestampPlayerSettings = { ...DEFAULT_SETTINGS };
@@ -15,7 +39,7 @@ export default class TimestampPlayerPlugin extends Plugin {
 		this.registerMarkdownPostProcessor(
 			async (el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
 				if (!(await this.hasAudioEmbed(ctx))) return;
-				this.processTimestamps(el);
+				this.queueProcessTimestamps(el);
 			}
 		);
 	}
@@ -31,73 +55,159 @@ export default class TimestampPlayerPlugin extends Plugin {
 		return AUDIO_EMBED_RE.test(content);
 	}
 
+	private queueProcessTimestamps(el: HTMLElement) {
+		const root = this.getMarkdownRoot(el);
+		if (this.queuedRoots.has(root)) return;
+		this.queuedRoots.add(root);
+
+		window.setTimeout(() => {
+			this.queuedRoots.delete(root);
+			if (!root.isConnected) return;
+			this.processTimestamps(root);
+		}, 0);
+	}
+
+	private getMarkdownRoot(el: HTMLElement): HTMLElement {
+		return (el.closest(".markdown-preview-view") as HTMLElement | null) ?? el;
+	}
+
 	private processTimestamps(el: HTMLElement) {
-		const paragraphs = el.querySelectorAll("p");
+		let sectionConfig: RhythmConfig = cloneRhythmConfig(DEFAULT_RHYTHM_CONFIG);
 
-		for (const p of Array.from(paragraphs)) {
-			const nodesToProcess: { node: Text; type: "speaker" | "inline"; match: RegExpMatchArray }[] = [];
-
-			for (const node of Array.from(p.childNodes)) {
-				if (node.nodeType !== Node.TEXT_NODE) continue;
-				const text = node.textContent?.trim() ?? "";
-				if (!text) continue;
-
-				const speakerMatch = text.match(SPEAKER_LINE_RE);
-				if (speakerMatch) {
-					nodesToProcess.push({ node: node as Text, type: "speaker", match: speakerMatch });
-				} else if (INLINE_TS_RE.test(text)) {
-					INLINE_TS_RE.lastIndex = 0;
-					nodesToProcess.push({ node: node as Text, type: "inline", match: [] as unknown as RegExpMatchArray });
-				}
+		for (const item of this.collectTimelineNodes(el)) {
+			if (item.type === "audio") {
+				sectionConfig = cloneRhythmConfig(DEFAULT_RHYTHM_CONFIG);
+				continue;
 			}
 
-			for (const item of nodesToProcess.reverse()) {
-				if (item.type === "speaker") {
-					this.replaceSpeakerLine(item.node, item.match);
-				} else {
-					this.replaceInlineTimestamps(item.node);
-				}
-			}
+			const nextConfig = this.processTextNode(item.node, sectionConfig);
+			if (nextConfig) sectionConfig = nextConfig;
 		}
 	}
 
-	private replaceSpeakerLine(node: Text, match: RegExpMatchArray) {
-		const speaker = match[1];
-		const minutes = parseInt(match[2], 10);
-		const seconds = parseInt(match[3], 10);
-		const totalSeconds = minutes * 60 + seconds;
-		const timeStr = match[2] + ":" + match[3];
+	private collectTimelineNodes(root: HTMLElement): TimelineNode[] {
+		const nodes: TimelineNode[] = [];
+		const walker = activeDocument.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+			acceptNode: (node) => {
+				if (node instanceof HTMLElement) {
+					if (node.matches("code, pre, .tsp-processed, .tsp-timestamp")) return NodeFilter.FILTER_REJECT;
+					if (node.tagName === "AUDIO") return NodeFilter.FILTER_ACCEPT;
+					return NodeFilter.FILTER_SKIP;
+				}
 
-		const wrapper = createFragment();
-		wrapper.appendChild(createSpan({ cls: "tsp-speaker", text: speaker + " " }));
-		wrapper.appendChild(this.createTimestampBtn(timeStr, totalSeconds));
-		node.parentNode?.replaceChild(wrapper, node);
+				const text = node.textContent ?? "";
+				if (!TOKEN_SCAN_RE.test(text)) return NodeFilter.FILTER_REJECT;
+				return NodeFilter.FILTER_ACCEPT;
+			},
+		});
+
+		let node: Node | null;
+		while ((node = walker.nextNode()) !== null) {
+			if (node instanceof HTMLAudioElement) {
+				nodes.push({ type: "audio", node });
+			} else if (node.nodeType === Node.TEXT_NODE) {
+				nodes.push({ type: "text", node: node as Text });
+			}
+		}
+
+		return nodes;
 	}
 
-	private replaceInlineTimestamps(node: Text) {
+	private processTextNode(node: Text, sectionConfig: RhythmConfig): RhythmConfig | null {
 		const text = node.textContent ?? "";
+		const explicitTokens = findExplicitTokens(text);
+
+		if (explicitTokens.length === 0) {
+			if (!this.settings.legacyBareTimestamps) return null;
+			return this.replaceLegacyTextNode(node, sectionConfig);
+		}
+
 		const fragment = createFragment();
+		const wrapper = createSpan({ cls: "tsp-processed" });
 		let lastIndex = 0;
+		let nextConfig = sectionConfig;
 
-		INLINE_TS_RE.lastIndex = 0;
-		let m: RegExpExecArray | null;
+		for (const token of explicitTokens) {
+			this.appendTextWithLegacy(wrapper, text.slice(lastIndex, token.start), nextConfig);
+			nextConfig = this.appendExplicitToken(wrapper, token, nextConfig);
+			lastIndex = token.end;
+		}
 
-		while ((m = INLINE_TS_RE.exec(text)) !== null) {
-			if (m.index > lastIndex) {
-				fragment.appendChild(activeDocument.createTextNode(text.slice(lastIndex, m.index)));
+		this.appendTextWithLegacy(wrapper, text.slice(lastIndex), nextConfig);
+		fragment.appendChild(wrapper);
+		node.parentNode?.replaceChild(fragment, node);
+		return nextConfig;
+	}
+
+	private appendExplicitToken(fragment: DocumentFragment | HTMLElement, token: ExplicitToken, sectionConfig: RhythmConfig): RhythmConfig {
+		if (token.type === "time") {
+			fragment.appendChild(this.createTimestampBtn(token.label, token.seconds, sectionConfig));
+			return sectionConfig;
+		}
+
+		if (token.type === "beat") {
+			const seconds = resolveBeatSeconds(token.position, sectionConfig);
+			if (seconds === null) {
+				fragment.appendChild(activeDocument.createTextNode(token.raw));
+			} else {
+				fragment.appendChild(this.createTimestampBtn(token.label, seconds, sectionConfig));
 			}
-			const tsStr = m[1];
-			const parts = tsStr.split(":");
-			const totalSeconds = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-			fragment.appendChild(this.createTimestampBtn(tsStr, totalSeconds));
-			lastIndex = m.index + m[0].length;
+			return sectionConfig;
+		}
+
+		if (token.type === "music") {
+			return mergeRhythmConfig(sectionConfig, token.patch);
+		}
+
+		fragment.appendChild(activeDocument.createTextNode(token.raw));
+		return sectionConfig;
+	}
+
+	private appendTextWithLegacy(fragment: DocumentFragment | HTMLElement, text: string, sectionConfig: RhythmConfig) {
+		if (!text) return;
+		if (!this.settings.legacyBareTimestamps) {
+			fragment.appendChild(activeDocument.createTextNode(text));
+			return;
+		}
+
+		const legacyTokens = findLegacyInlineTimestamps(text);
+		if (legacyTokens.length === 0) {
+			fragment.appendChild(activeDocument.createTextNode(text));
+			return;
+		}
+
+		let lastIndex = 0;
+		for (const token of legacyTokens) {
+			if (token.start > lastIndex) {
+				fragment.appendChild(activeDocument.createTextNode(text.slice(lastIndex, token.start)));
+			}
+			fragment.appendChild(this.createTimestampBtn(token.label, token.seconds, sectionConfig));
+			lastIndex = token.end;
 		}
 
 		if (lastIndex < text.length) {
 			fragment.appendChild(activeDocument.createTextNode(text.slice(lastIndex)));
 		}
+	}
 
-		node.parentNode?.replaceChild(fragment, node);
+	private replaceLegacyTextNode(node: Text, sectionConfig: RhythmConfig): RhythmConfig | null {
+		const text = node.textContent ?? "";
+		const speaker = parseLegacySpeakerLine(text);
+		if (speaker) {
+			const wrapper = createFragment();
+			wrapper.appendChild(createSpan({ cls: "tsp-speaker", text: speaker.speaker + " " }));
+			wrapper.appendChild(this.createTimestampBtn(speaker.label, speaker.seconds, sectionConfig));
+			node.parentNode?.replaceChild(wrapper, node);
+			return null;
+		}
+
+		const legacyTokens = findLegacyInlineTimestamps(text);
+		if (legacyTokens.length === 0) return null;
+
+		const wrapper = createFragment();
+		this.appendTextWithLegacy(wrapper, text, sectionConfig);
+		node.parentNode?.replaceChild(wrapper, node);
+		return null;
 	}
 
 	private activeBtn: HTMLElement | null = null;
@@ -107,16 +217,22 @@ export default class TimestampPlayerPlugin extends Plugin {
 	private boundEnded: (() => void) | null = null;
 	private boundPause: (() => void) | null = null;
 	private switching = false;
+	private queuedRoots = new WeakSet<HTMLElement>();
 
-	private createTimestampBtn(timeStr: string, totalSeconds: number): HTMLSpanElement {
+	private createTimestampBtn(label: string, totalSeconds: number, rhythmConfig: RhythmConfig): HTMLSpanElement {
 		const btn = createSpan({ cls: "tsp-timestamp" });
 		btn.setAttribute("data-seconds", String(totalSeconds));
+		btn.setAttribute("data-metronome-enabled", String(rhythmConfig.metronome ?? this.settings.metronomeDefaultEnabled));
+		btn.setAttribute("data-metronome-volume", String(this.settings.metronomeVolume));
+		btn.setAttribute("data-delay", String(rhythmConfig.delay));
+		btn.setAttribute("data-beats-per-bar", String(rhythmConfig.meter.beatsPerBar));
+		if (rhythmConfig.bpm !== null) btn.setAttribute("data-bpm", String(rhythmConfig.bpm));
 		btn.setAttribute("role", "button");
-		btn.setAttribute("aria-label", `Play from ${timeStr}`);
+		btn.setAttribute("aria-label", `Play from ${label}`);
 
 		const icon = createSpan({ cls: "tsp-play-icon", text: "▶" });
 		btn.appendChild(icon);
-		btn.appendChild(createSpan({ cls: "tsp-time", text: timeStr }));
+		btn.appendChild(createSpan({ cls: "tsp-time", text: label }));
 
 		btn.addEventListener("click", (e) => {
 			e.preventDefault();
