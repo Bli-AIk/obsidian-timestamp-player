@@ -1,11 +1,48 @@
 import { describe, expect, it } from "vitest";
 import {
+	cloneRhythmConfig,
 	DEFAULT_METER,
 	DEFAULT_RHYTHM_CONFIG,
+	mergeRhythmConfig,
 	parseBeatPosition,
 	parseMeter,
 	resolveBeatSeconds,
 } from "./rhythm";
+
+describe("cloneRhythmConfig", () => {
+	it("returns a separate meter object", () => {
+		const cloned = cloneRhythmConfig({ ...DEFAULT_RHYTHM_CONFIG, bpm: 120 });
+
+		expect(cloned).toEqual({ ...DEFAULT_RHYTHM_CONFIG, bpm: 120 });
+		expect(cloned.meter).toEqual(DEFAULT_RHYTHM_CONFIG.meter);
+		expect(cloned.meter).not.toBe(DEFAULT_RHYTHM_CONFIG.meter);
+	});
+});
+
+describe("mergeRhythmConfig", () => {
+	it("can clear nullable fields", () => {
+		const merged = mergeRhythmConfig({ ...DEFAULT_RHYTHM_CONFIG, bpm: 120, metronome: true }, { bpm: null, metronome: null });
+
+		expect(merged.bpm).toBeNull();
+		expect(merged.metronome).toBeNull();
+	});
+
+	it("preserves fields not present in the patch", () => {
+		const config = {
+			bpm: 120,
+			delay: 0.25,
+			meter: { beatsPerBar: 3, beatUnit: 4, label: "3/4" },
+			metronome: true,
+		};
+
+		expect(mergeRhythmConfig(config, { delay: 0.5 })).toEqual({
+			bpm: 120,
+			delay: 0.5,
+			meter: { beatsPerBar: 3, beatUnit: 4, label: "3/4" },
+			metronome: true,
+		});
+	});
+});
 
 describe("parseMeter", () => {
 	it("defaults to 4/4 through DEFAULT_METER", () => {
@@ -58,5 +95,19 @@ describe("resolveBeatSeconds", () => {
 	it("requires a positive bpm", () => {
 		expect(resolveBeatSeconds({ bar: 1, beat: 1 }, { ...DEFAULT_RHYTHM_CONFIG, bpm: null })).toBeNull();
 		expect(resolveBeatSeconds({ bar: 1, beat: 1 }, { ...DEFAULT_RHYTHM_CONFIG, bpm: 0 })).toBeNull();
+	});
+
+	it("rejects invalid exported position inputs", () => {
+		expect(resolveBeatSeconds({ bar: 0, beat: 1 }, { ...DEFAULT_RHYTHM_CONFIG, bpm: 120 })).toBeNull();
+		expect(resolveBeatSeconds({ bar: 1, beat: 0 }, { ...DEFAULT_RHYTHM_CONFIG, bpm: 120 })).toBeNull();
+		expect(resolveBeatSeconds({ bar: 1.5, beat: 1 }, { ...DEFAULT_RHYTHM_CONFIG, bpm: 120 })).toBeNull();
+		expect(resolveBeatSeconds({ bar: 1, beat: 1.5 }, { ...DEFAULT_RHYTHM_CONFIG, bpm: 120 })).toBeNull();
+	});
+
+	it("rejects invalid exported meter inputs", () => {
+		expect(resolveBeatSeconds({ bar: 1, beat: 1 }, { ...DEFAULT_RHYTHM_CONFIG, bpm: 120, meter: { beatsPerBar: 0, beatUnit: 4, label: "0/4" } })).toBeNull();
+		expect(resolveBeatSeconds({ bar: 1, beat: 1 }, { ...DEFAULT_RHYTHM_CONFIG, bpm: 120, meter: { beatsPerBar: -1, beatUnit: 4, label: "-1/4" } })).toBeNull();
+		expect(resolveBeatSeconds({ bar: 1, beat: 1 }, { ...DEFAULT_RHYTHM_CONFIG, bpm: 120, meter: { beatsPerBar: 1.5, beatUnit: 4, label: "1.5/4" } })).toBeNull();
+		expect(resolveBeatSeconds({ bar: 1, beat: 1 }, { ...DEFAULT_RHYTHM_CONFIG, bpm: 120, meter: { beatsPerBar: Number.MAX_SAFE_INTEGER + 1, beatUnit: 4, label: "unsafe/4" } })).toBeNull();
 	});
 });

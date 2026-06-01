@@ -42,10 +42,10 @@ export function cloneRhythmConfig(config: RhythmConfig = DEFAULT_RHYTHM_CONFIG):
 
 export function mergeRhythmConfig(config: RhythmConfig, patch: RhythmConfigPatch): RhythmConfig {
 	return {
-		bpm: patch.bpm ?? config.bpm,
-		delay: patch.delay ?? config.delay,
+		bpm: "bpm" in patch ? patch.bpm! : config.bpm,
+		delay: "delay" in patch ? patch.delay! : config.delay,
 		meter: patch.meter ? { ...patch.meter } : { ...config.meter },
-		metronome: patch.metronome ?? config.metronome,
+		metronome: "metronome" in patch ? patch.metronome! : config.metronome,
 	};
 }
 
@@ -78,6 +78,9 @@ export function parseBeatPosition(input: string): BeatPosition | null {
 export function resolveBeatSeconds(position: BeatPosition, config: Pick<RhythmConfig, "bpm" | "delay" | "meter">): number | null {
 	if (config.bpm === null || !Number.isFinite(config.bpm) || config.bpm <= 0) return null;
 	if (!Number.isFinite(config.delay)) return null;
+	if (!Number.isSafeInteger(position.bar) || position.bar <= 0) return null;
+	if (!Number.isSafeInteger(position.beat) || position.beat <= 0) return null;
+	if (!Number.isSafeInteger(config.meter.beatsPerBar) || config.meter.beatsPerBar <= 0) return null;
 	if (position.beat > config.meter.beatsPerBar) return null;
 
 	const secondsPerBeat = 60 / config.bpm;
