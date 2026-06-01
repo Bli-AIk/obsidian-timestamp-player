@@ -27,8 +27,11 @@
 
 ## 功能
 
-- **说话人时间戳** — 行首 `说话人 MM:SS` 转为可点击的播放按钮
-- **正文时间戳** — 正文中的 `MM:SS` 同样可点击
+- **显式时间戳** — `{t:00:27}` 和 `{t:01:02:03}` 会变成可点击播放按钮
+- **小节/拍号时间戳** — 配置 BPM 后，`{b:4.3}` 可以按音乐位置跳转
+- **分区节奏配置** — `{music bpm=135 delay=0.3 meter=4/4}` 配置其下方音频区段的拍号换算
+- **可选节拍器** — 可全局或按区段开启轻量 click 声和节拍脉冲反馈
+- **旧语法兼容** — 可在设置中重新启用裸 `MM:SS`，用于旧转录笔记
 - **播放/暂停切换** — 点击 `▶` 播放，点击 `⏸` 暂停，再点恢复播放
 - **播放跟踪** — 播放过程中，当前时间戳自动高亮，随播放进度依次往下移动
 - **多音频支持** — 每个音频文件仅控制其所属区段的时间戳
@@ -36,24 +39,43 @@
 
 ## 时间戳格式
 
-插件识别两种模式：
+插件默认识别显式标记：
 
-### 说话人行
+```markdown
+![[music.ogg]]
+{music bpm=135 delay=0.3 meter=4/4}
 
-时间戳在行末，前面是说话人名称：
-
+Intro {b:1.1}
+Hit {b:4.3}
+Exact fallback {t:00:27}
+Long audio {t:01:02:03}
 ```
-说话人 MM:SS
-下一行是转录内容...
+
+### 绝对时间戳
+
+使用 `{t:MM:SS}` 或 `{t:HH:MM:SS}`：
+
+```markdown
+Jump here: {t:00:27}
 ```
 
-### 正文时间戳
+### 小节/拍号时间戳
 
-时间戳出现在文本任意位置：
+在节奏配置标记之后使用 `{b:bar.beat}`：
 
+```markdown
+![[song.ogg]]
+{music bpm=120 delay=0.3 meter=4/4}
+
+Start {b:1.1}
+Second bar {b:2.1}
 ```
-在 03:15 提到的方案已经通过了。
-```
+
+`delay` 遵循参考头部延迟模型：解析出的音频时间为 `beat time - delay`。例如，在 120 BPM、4/4、`delay=0.3` 时，`{b:2.1}` 会解析为 1.7 秒。
+
+### 旧语法时间戳
+
+裸时间戳（例如 `00:27`）和说话人行（例如 `Alice 00:27`）默认关闭，以避免误识别。可在插件设置中开启 **Recognize bare timestamps** 来恢复原行为。
 
 > **注意：** 文档中必须包含至少一个嵌入的音频文件（`![[文件.mp3]]`、`![[文件.ogg]]`、`![[文件.wav]]` 等），插件才会生效。支持格式：mp3、wav、ogg、webm、m4a、flac、3gp。
 
@@ -98,6 +120,30 @@
 2. 在 vault 中创建 `.obsidian/plugins/timestamp-player/` 文件夹
 3. 将三个文件复制进去
 4. 在 设置 → 第三方插件 中启用
+
+## 在 Obsidian 中手动检验
+
+1. 运行 `npm run build`。
+2. 把 `main.js`、`styles.css`、`manifest.json` 复制到 `<vault>/.obsidian/plugins/timestamp-player/`。
+3. 在 设置 → 第三方插件 中启用 **Timestamp Player**。
+4. 在阅读视图打开包含以下内容的笔记：
+
+```markdown
+![[music.ogg]]
+{music bpm=120 delay=0.3 meter=4/4 metronome=off}
+
+Start {b:1.1}
+Bar two {b:2.1}
+Absolute {t:00:05}
+Bare legacy 00:07
+```
+
+预期行为：
+
+- `{b:1.1}`、`{b:2.1}`、`{t:00:05}` 会变成可点击按钮。
+- `00:07` 在开启 **Recognize bare timestamps** 前保持普通文本。
+- `{b:2.1}` 会跳到 1.7 秒。
+- 设置 `metronome=on` 后，播放时会出现节拍脉冲反馈和轻量 click 声。
 
 ## 环境要求
 

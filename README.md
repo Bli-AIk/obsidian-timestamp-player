@@ -27,8 +27,11 @@ In reading view, each timestamp becomes a clickable `▶ 00:27` button. Click to
 
 ## Features
 
-- **Speaker line timestamps** — `SpeakerName MM:SS` at the start of a line becomes a clickable play button
-- **Inline timestamps** — `MM:SS` anywhere in text is also clickable
+- **Explicit timestamp tokens** — `{t:00:27}` and `{t:01:02:03}` become clickable play buttons
+- **Beat/bar tokens** — `{b:4.3}` can seek by musical position when a section declares BPM
+- **Per-section rhythm config** — `{music bpm=135 delay=0.3 meter=4/4}` configures beat conversion for the audio below it
+- **Optional metronome** — enable quiet click and beat pulse feedback globally or per section
+- **Legacy compatibility** — bare `MM:SS` timestamps can be re-enabled in settings for old transcript notes
 - **Play / pause toggle** — click `▶` to play, click `⏸` to pause, click again to resume
 - **Playback follow-along** — the current timestamp auto-highlights and progresses as the audio plays
 - **Multiple audio files** — each audio controls only the timestamps in its own section
@@ -36,24 +39,43 @@ In reading view, each timestamp becomes a clickable `▶ 00:27` button. Click to
 
 ## Timestamp Format
 
-The plugin recognizes two patterns:
+The plugin now recognizes explicit tokens by default:
 
-### Speaker lines
+```markdown
+![[music.ogg]]
+{music bpm=135 delay=0.3 meter=4/4}
 
-Timestamp at the end of a line, preceded by a speaker name:
-
+Intro {b:1.1}
+Hit {b:4.3}
+Exact fallback {t:00:27}
+Long audio {t:01:02:03}
 ```
-SpeakerName MM:SS
-Transcript content on the next line...
+
+### Absolute timestamps
+
+Use `{t:MM:SS}` or `{t:HH:MM:SS}`:
+
+```markdown
+Jump here: {t:00:27}
 ```
 
-### Inline timestamps
+### Beat/bar timestamps
 
-Timestamp appearing anywhere within text:
+Use `{b:bar.beat}` after a rhythm config token:
 
+```markdown
+![[song.ogg]]
+{music bpm=120 delay=0.3 meter=4/4}
+
+Start {b:1.1}
+Second bar {b:2.1}
 ```
-As mentioned at 03:15, the proposal was approved.
-```
+
+`delay` follows the reference head-delay model: the resolved audio time is `beat time - delay`. For example, `{b:2.1}` at 120 BPM in 4/4 with `delay=0.3` resolves to 1.7 seconds.
+
+### Legacy timestamps
+
+Bare timestamps such as `00:27` and speaker lines such as `Alice 00:27` are disabled by default to avoid false positives. Enable **Recognize bare timestamps** in plugin settings to restore the original behavior.
 
 > **Note:** The document must contain at least one embedded audio file (`![[file.mp3]]`, `![[file.ogg]]`, `![[file.wav]]`, etc.) for the plugin to activate. Supported formats: mp3, wav, ogg, webm, m4a, flac, 3gp.
 
@@ -98,6 +120,30 @@ Search for **Timestamp Player** in Settings → Community plugins, or install di
 2. Create `.obsidian/plugins/timestamp-player/` in your vault
 3. Copy the three files into it
 4. Enable in Settings → Community plugins
+
+## Manual Testing In Obsidian
+
+1. Run `npm run build`.
+2. Copy `main.js`, `styles.css`, and `manifest.json` into `<vault>/.obsidian/plugins/timestamp-player/`.
+3. Enable **Timestamp Player** in Settings → Community plugins.
+4. Open a note in reading view with:
+
+```markdown
+![[music.ogg]]
+{music bpm=120 delay=0.3 meter=4/4 metronome=off}
+
+Start {b:1.1}
+Bar two {b:2.1}
+Absolute {t:00:05}
+Bare legacy 00:07
+```
+
+Expected behavior:
+
+- `{b:1.1}`, `{b:2.1}`, and `{t:00:05}` become clickable buttons.
+- `00:07` stays plain text until **Recognize bare timestamps** is enabled.
+- `{b:2.1}` seeks to 1.7 seconds.
+- Setting `metronome=on` produces beat pulse feedback and quiet clicks during playback.
 
 ## Requirements
 
