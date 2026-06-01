@@ -17,16 +17,18 @@ export class TimestampMetronome {
 	private onBeat: BeatCallback | null = null;
 
 	start(audio: HTMLAudioElement, config: MetronomeRuntimeConfig, onBeat: BeatCallback): void {
+		const alreadyStarted = this.audio === audio && this.config !== null && this.hasSameConfig(config);
+
 		this.audio = audio;
 		this.config = config;
 		this.onBeat = onBeat;
-		this.lastBeatIndex = null;
+		if (!alreadyStarted) this.lastBeatIndex = null;
 
 		if (this.timer === null) {
 			this.timer = window.setInterval(() => this.tick(), 25);
 		}
 
-		this.tick();
+		if (!alreadyStarted) this.tick();
 	}
 
 	stop(): void {
@@ -59,6 +61,7 @@ export class TimestampMetronome {
 	private playClick(downbeat: boolean): void {
 		const context = this.getAudioContext();
 		if (!context || !this.config || this.config.volume <= 0) return;
+		if (context.state === "suspended") context.resume().catch(() => {});
 
 		const now = context.currentTime;
 		const oscillator = context.createOscillator();
@@ -85,5 +88,13 @@ export class TimestampMetronome {
 
 		this.context = new ContextCtor();
 		return this.context;
+	}
+
+	private hasSameConfig(config: MetronomeRuntimeConfig): boolean {
+		return this.config !== null
+			&& this.config.bpm === config.bpm
+			&& this.config.delay === config.delay
+			&& this.config.beatsPerBar === config.beatsPerBar
+			&& this.config.volume === config.volume;
 	}
 }

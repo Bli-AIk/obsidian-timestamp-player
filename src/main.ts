@@ -51,6 +51,10 @@ export default class TimestampPlayerPlugin extends Plugin {
 		);
 	}
 
+	onunload() {
+		this.clearPlaybackState();
+	}
+
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
 	}
@@ -456,16 +460,16 @@ export default class TimestampPlayerPlugin extends Plugin {
 	}
 
 	private pulseBeat(downbeat: boolean) {
-		if (!this.activeBtn) return;
-		this.activeBtn.removeClass("tsp-beat-pulse");
-		this.activeBtn.removeClass("tsp-downbeat-pulse");
+		const target = this.activeBtn;
+		if (!target) return;
+		target.removeClass("tsp-beat-pulse");
+		target.removeClass("tsp-downbeat-pulse");
 
 		window.requestAnimationFrame(() => {
-			if (!this.activeBtn) return;
-			this.activeBtn.addClass(downbeat ? "tsp-downbeat-pulse" : "tsp-beat-pulse");
+			target.addClass(downbeat ? "tsp-downbeat-pulse" : "tsp-beat-pulse");
 			window.setTimeout(() => {
-				this.activeBtn?.removeClass("tsp-beat-pulse");
-				this.activeBtn?.removeClass("tsp-downbeat-pulse");
+				target.removeClass("tsp-beat-pulse");
+				target.removeClass("tsp-downbeat-pulse");
 			}, 120);
 		});
 	}
