@@ -52,7 +52,8 @@ const LEGACY_INLINE_RE = /\b(\d{1,3}:\d{2})\b/g;
 const LEGACY_SPEAKER_RE = /^(.+?)\s+(\d{1,3}:\d{2})\s*$/;
 
 export function parseTimestampLiteral(input: string): ParsedTimestamp | null {
-	const parts = input.trim().split(":");
+	const label = input.trim();
+	const parts = label.split(":");
 	if (parts.length !== 2 && parts.length !== 3) return null;
 	if (!parts.every((part) => /^\d+$/.test(part))) return null;
 
@@ -62,12 +63,12 @@ export function parseTimestampLiteral(input: string): ParsedTimestamp | null {
 	if (parts.length === 2) {
 		const [minutes, seconds] = values;
 		if (seconds > 59) return null;
-		return { label: input, seconds: minutes * 60 + seconds };
+		return { label, seconds: minutes * 60 + seconds };
 	}
 
 	const [hours, minutes, seconds] = values;
 	if (minutes > 59 || seconds > 59) return null;
-	return { label: input, seconds: hours * 3600 + minutes * 60 + seconds };
+	return { label, seconds: hours * 3600 + minutes * 60 + seconds };
 }
 
 export function findExplicitTokens(text: string): ExplicitToken[] {
@@ -114,6 +115,7 @@ function parseMusicToken(raw: string, start: number, end: number): ExplicitToken
 
 		const [key, value] = assignment;
 		if (!key || value === undefined) continue;
+		if (value === "") continue;
 
 		if (key === "bpm") {
 			const bpm = Number(value);
@@ -136,16 +138,21 @@ function parseMusicToken(raw: string, start: number, end: number): ExplicitToken
 
 export function findLegacyInlineTimestamps(text: string): PositionedTimestamp[] {
 	const timestamps: PositionedTimestamp[] = [];
+	const explicitTokens = findExplicitTokens(text);
 	LEGACY_INLINE_RE.lastIndex = 0;
 
 	let match: RegExpExecArray | null;
 	while ((match = LEGACY_INLINE_RE.exec(text)) !== null) {
+		const start = match.index;
+		const end = start + match[1].length;
+		if (explicitTokens.some((token) => start >= token.start && end <= token.end)) continue;
+
 		const parsed = parseTimestampLiteral(match[1]);
 		if (!parsed) continue;
 		timestamps.push({
 			...parsed,
-			start: match.index,
-			end: match.index + match[1].length,
+			start,
+			end,
 		});
 	}
 

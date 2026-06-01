@@ -15,6 +15,10 @@ describe("parseTimestampLiteral", () => {
 		expect(parseTimestampLiteral("01:02:03")).toEqual({ label: "01:02:03", seconds: 3723 });
 	});
 
+	it("normalizes labels to the trimmed timestamp literal", () => {
+		expect(parseTimestampLiteral(" 00:27 ")).toEqual({ label: "00:27", seconds: 27 });
+	});
+
 	it("rejects invalid timestamps", () => {
 		expect(parseTimestampLiteral("00:60")).toBeNull();
 		expect(parseTimestampLiteral("1")).toBeNull();
@@ -90,6 +94,26 @@ describe("findExplicitTokens", () => {
 			},
 		]);
 	});
+
+	it("ignores empty music config values when other valid fields remain", () => {
+		expect(findExplicitTokens("{music bpm=120 delay=}")).toEqual([
+			{
+				type: "music",
+				raw: "{music bpm=120 delay=}",
+				start: 0,
+				end: 22,
+				patch: {
+					bpm: 120,
+				},
+			},
+		]);
+	});
+
+	it("rejects music config tokens with only empty values", () => {
+		expect(findExplicitTokens("{music delay=}")).toEqual([
+			{ type: "invalid", raw: "{music delay=}", start: 0, end: 14 },
+		]);
+	});
 });
 
 describe("legacy parsing helpers", () => {
@@ -97,6 +121,13 @@ describe("legacy parsing helpers", () => {
 		expect(findLegacyInlineTimestamps("At 00:27 and 01:02")).toEqual([
 			{ label: "00:27", seconds: 27, start: 3, end: 8 },
 			{ label: "01:02", seconds: 62, start: 13, end: 18 },
+		]);
+	});
+
+	it("does not return bare timestamps inside explicit token spans", () => {
+		expect(findLegacyInlineTimestamps("before 00:01 {t:00:27 bad} after 00:02")).toEqual([
+			{ label: "00:01", seconds: 1, start: 7, end: 12 },
+			{ label: "00:02", seconds: 2, start: 33, end: 38 },
 		]);
 	});
 
