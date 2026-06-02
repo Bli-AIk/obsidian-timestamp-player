@@ -6,6 +6,7 @@ import {
 	formatBeatPosition,
 	mergeRhythmConfig,
 	resolveCurrentBeatPosition,
+	resolveTotalBeat,
 	resolveBeatSeconds,
 } from "./rhythm";
 import {
@@ -488,12 +489,24 @@ export default class TimestampPlayerPlugin extends Plugin {
 		this.removeBeatDisplay(audio);
 
 		const display = createSpan({ cls: "tsp-beat-display" });
+		const barBeatDisplay = createSpan({ cls: "tsp-beat-position" });
+		const totalBeatDisplay = createSpan({ cls: "tsp-total-beat" });
 		display.setAttribute("aria-label", "Current beat");
+		display.appendChild(barBeatDisplay);
+		display.appendChild(totalBeatDisplay);
 		audio.insertAdjacentElement("afterend", display);
 
 		const update = () => {
 			const position = resolveCurrentBeatPosition(audio.currentTime, config);
-			display.textContent = position ? formatBeatPosition(position) : "";
+			if (!position) {
+				barBeatDisplay.textContent = "";
+				totalBeatDisplay.textContent = "";
+				return;
+			}
+
+			const totalBeat = resolveTotalBeat(position, config.meter);
+			barBeatDisplay.textContent = formatBeatPosition(position);
+			totalBeatDisplay.textContent = totalBeat === null ? "" : String(totalBeat);
 		};
 
 		audio.addEventListener("timeupdate", update);

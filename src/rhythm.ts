@@ -109,3 +109,13 @@ export function resolveCurrentBeatPosition(seconds: number, config: Pick<RhythmC
 export function formatBeatPosition(position: BeatPosition): string {
 	return `${position.bar}.${position.beat}`;
 }
+
+export function resolveTotalBeat(position: BeatPosition, meter: Meter): number | null {
+	if (!Number.isSafeInteger(position.bar) || position.bar <= 0) return null;
+	if (!Number.isSafeInteger(position.beat) || position.beat <= 0) return null;
+	if (!Number.isSafeInteger(meter.beatsPerBar) || meter.beatsPerBar <= 0) return null;
+	if (position.beat > meter.beatsPerBar) return null;
+
+	const beatIndex = (position.bar - 1) * meter.beatsPerBar + position.beat;
+	return Number.isSafeInteger(beatIndex) ? beatIndex : null;
+}

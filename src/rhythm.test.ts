@@ -8,6 +8,7 @@ import {
 	parseBeatPosition,
 	parseMeter,
 	resolveCurrentBeatPosition,
+	resolveTotalBeat,
 	resolveBeatSeconds,
 } from "./rhythm";
 
@@ -136,5 +137,24 @@ describe("resolveCurrentBeatPosition", () => {
 describe("formatBeatPosition", () => {
 	it("formats bar and beat labels", () => {
 		expect(formatBeatPosition({ bar: 12, beat: 3 })).toBe("12.3");
+	});
+});
+
+describe("resolveTotalBeat", () => {
+	it("maps bar and beat to a one-based total beat number", () => {
+		expect(resolveTotalBeat({ bar: 1, beat: 4 }, DEFAULT_METER)).toBe(4);
+		expect(resolveTotalBeat({ bar: 2, beat: 4 }, DEFAULT_METER)).toBe(8);
+	});
+
+	it("uses the configured meter numerator", () => {
+		const meter = parseMeter("3/4");
+		expect(meter).not.toBeNull();
+		expect(resolveTotalBeat({ bar: 2, beat: 1 }, meter!)).toBe(4);
+	});
+
+	it("rejects invalid positions and meters", () => {
+		expect(resolveTotalBeat({ bar: 0, beat: 1 }, DEFAULT_METER)).toBeNull();
+		expect(resolveTotalBeat({ bar: 1, beat: 5 }, DEFAULT_METER)).toBeNull();
+		expect(resolveTotalBeat({ bar: 1, beat: 1 }, { beatsPerBar: 0, beatUnit: 4, label: "0/4" })).toBeNull();
 	});
 });
